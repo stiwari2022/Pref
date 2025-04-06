@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphing Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.1/math.min.js"></script>
+    <style>
+      body {
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+      /* Scrollbar styling for lists */
+      .styled-scrollbar::-webkit-scrollbar {
+        width: 8px;
+      }
+      .styled-scrollbar::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+      }
+      .styled-scrollbar::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 10px;
+      }
+      .styled-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #555;
+      }
+       canvas:focus {
+            outline: none;
+       }
+       /* Equation list item styling */
+       .equation-item {
+           cursor: pointer;
+           transition: background-color 0.2s ease-in-out;
+       }
+       .equation-item.selected {
+            background-color: #e0e7ff; /* Lighter indigo */
+            border-color: #a5b4fc !important; /* Slightly darker indigo */
+            border-width: 1px;
+       }
+       /* Controls panel styling */
+       #controls-panel {
+           transition: width 0.3s ease-in-out, min-width 0.3s ease-in-out;
+           flex-shrink: 0;
+       }
+       .panel-collapsed {
+            width: 60px !important;
+            min-width: 60px !important;
+            overflow: hidden;
+       }
+       .panel-collapsed .collapsible-content {
+            display: none;
+       }
+        .panel-collapsed h1 {
+             writing-mode: vertical-rl;
+             transform: rotate(180deg);
+             margin: 0 auto;
+             white-space: nowrap;
+             margin-bottom: 1rem;
+             height: auto;
+             text-align: center;
+             font-size: 1rem; /* Smaller font when collapsed */
+        }
+         .panel-collapsed #toggle-panel-button {
+             margin: 1rem auto;
+             transform: rotate(90deg);
+         }
+         .panel-collapsed #toggle-panel-button .text-expanded {
+             display: none;
+         }
+          .panel-collapsed #toggle-panel-button .text-collapsed {
+             display: inline;
+         }
+
+         /* Graph area styling */
+         #graph-container {
+            flex-grow: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+            background-color: #e5e7eb; /* Light gray background */
+            padding: 1rem;
+         }
+         #graph-canvas {
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            width: 100%;
+            height: 100%;
+            display: block;
+         }
+         /* Resizer handle styling */
+         #resizer-handle {
+            width: 10px;
+            cursor: col-resize;
+            background-color: #9ca3af; /* Medium gray */
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-left: 1px solid #6b7280; /* Darker gray */
+            border-right: 1px solid #6b7280;
+         }
+         #resizer-handle:hover {
+             background-color: #6b7280; /* Darker gray on hover */
+         }
+         #resizer-handle::before {
+             content: '⋮';
+             color: white;
+             font-size: 1.2rem;
+             line-height: 0;
+         }
+         /* Intersection list styling */
+         #intersection-list {
+            max-height: 150px; /* Limit height and make scrollable */
+            min-height: 50px;
+         }
+
+    </style>
+    <script>
+        // Configure Tailwind CSS
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'], // Use Inter font
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+
+    <div id="controls-panel" class="w-1/4 min-w-[300px] p-4 bg-white shadow-md flex flex-col space-y-4 overflow-y-auto relative styled-scrollbar">
+        <h1 class="text-xl font-bold text-center text-gray-700">Graphing Calculator</h1>
+
+        <button id="toggle-panel-button" class="absolute top-2 right-2 md:relative md:top-auto md:right-auto md:mt-[-10px] md:mb-2 mx-auto px-2 py-1 bg-gray-200 text-gray-600 rounded-md hover:bg-gray-300 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 z-10">
+            <span class="text-expanded">Collapse</span>
+            <span class="text-collapsed hidden">&harr; Expand</span>
+        </button>
+
+        <div class="collapsible-content space-y-4 flex flex-col flex-grow">
+            <div class="space-y-2">
+                <label for="equation" class="block text-sm font-medium text-gray-600">Enter Equation (e.g., y=2*x^2+1, x=5):</label>
+                <div class="flex space-x-2">
+                    <input type="text" id="equation" class="flex-grow p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="y = x^2">
+                    <button id="add-equation" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Add</button>
+                </div>
+                 <p id="equation-error" class="text-red-500 text-xs mt-1"></p>
+            </div>
+
+            <div class="space-y-2 flex-grow flex flex-col min-h-[100px]">
+                <h2 class="text-md font-semibold text-gray-700">Equations (Click to select):</h2>
+                <div id="equation-list" class="equation-list styled-scrollbar flex-grow border border-gray-200 rounded-md p-2 space-y-1 overflow-y-auto bg-gray-50">
+                    <p class="text-xs text-gray-500">No equations added yet.</p>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <label for="x-value" class="block text-sm font-medium text-gray-600">Calculate Y for X (selected):</label>
+                <div class="flex space-x-2">
+                    <input type="number" id="x-value" step="any" class="flex-grow p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter x">
+                    <button id="calculate-y" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">Calc</button>
+                </div>
+                <p id="y-result" class="mt-1 text-sm text-gray-800 h-5"></p>
+            </div>
+
+            <div class="flex items-center justify-center space-x-4">
+                 <span class="text-sm font-medium text-gray-600">Zoom:</span>
+                 <button id="zoom-out" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 text-sm">
+                    Zoom Out
+                </button>
+                <button id="zoom-in" class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 text-sm">
+                     Zoom In
+                </button>
+            </div>
+             <div class="flex space-x-2">
+                <button id="reset-view" class="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400">Reset View</button>
+                <button id="clear-all" class="flex-1 px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400">Clear All</button>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="resizer-handle"></div>
+
+    <div id="graph-container">
+         <canvas id="graph-canvas" tabindex="0"></canvas> </div>
+
+    <script>
+        // --- DOM Element References ---
+        const canvas = document.getElementById('graph-canvas');
+        const ctx = canvas.getContext('2d');
+        const equationInput = document.getElementById('equation');
+        const addEquationButton = document.getElementById('add-equation');
+        const equationListDiv = document.getElementById('equation-list');
+        const xValueInput = document.getElementById('x-value');
+        const calculateYButton = document.getElementById('calculate-y');
+        const yResultP = document.getElementById('y-result');
+        const zoomInButton = document.getElementById('zoom-in');
+        const zoomOutButton = document.getElementById('zoom-out');
+        const resetViewButton = document.getElementById('reset-view');
+        const clearAllButton = document.getElementById('clear-all');
+        const equationErrorP = document.getElementById('equation-error');
+        const controlsPanel = document.getElementById('controls-panel');
+        const togglePanelButton = document.getElementById('toggle-panel-button');
+        const resizerHandle = document.getElementById('resizer-handle');
+        const graphContainer = document.getElementById('graph-container');
+        const intersectionListDiv = document.getElementById('intersection-list');
+
+        // --- State Variables ---
+        let scale = 40;
+        let originX, originY;
+        let equations = [];
+        let equationCounter = 0;
+        const colors = ['#3b82f6', '#ef4444', '#10b981', '#eab308', '#8b5cf6', '#ec4899', '#f97316', '#6b7280'];
+        let dragStart = null;
+        let currentOffset = { x: 0, y: 0 };
+        let selectedEquationId = null;
+        let isPanelCollapsed = false;
+        let isResizing = false;
+        const defaultControlsWidth = '25%';
+        const minControlsWidth = 300;
+        const collapsedControlsWidth = 60;
+        const LOCAL_STORAGE_KEY = 'graphingCalculatorState';
+
+        // --- Initialization ---
+        function init() {
+            loadStateFromLocalStorage();
+            setInitialOrigin();
+            addEventListeners();
+            resizeCanvas();
+            updateEquationListUI();
+            canvas.style.cursor = 'grab';
+        }
+
+        // --- Utility Functions ---
+        /**
+         * Formats a number to a maximum number of decimal places, removing trailing zeros.
+         * @param {number} num The number to format.
+         * @param {number} maxDecimals The maximum number of decimal places.
+         * @returns {string} The formatted number string.
+         */
+        function formatNumber(num, maxDecimals) {
+            if (typeof num !== 'number' || !isFinite(num)) {
+                return String(num); // Return original if not a valid number
+            }
+            // Use parseFloat to remove trailing zeros after setting max decimals
+            return parseFloat(num.toFixed(maxDecimals)).toString();
+        }
+
+        // --- Canvas and Drawing ---
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            setInitialOrigin();
+            drawGraph();
+        }
+
+        function setInitialOrigin() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
+            originX = (canvas.width / dpr) / 2 + currentOffset.x;
+            originY = (canvas.height / dpr) / 2 + currentOffset.y;
+        }
+
+        function drawGraph() {
+            const dpr = window.devicePixelRatio || 1;
+            const canvasWidth = canvas.width / dpr;
+            const canvasHeight = canvas.height / dpr;
+            if (canvasWidth <= 0 || canvasHeight <= 0) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGridAndAxes(canvasWidth, canvasHeight);
+
+            equations.forEach(eq => {
+                const xMin = fromCanvasX(0);
+                const xMax = fromCanvasX(canvasWidth);
+                const yMin = fromCanvasY(canvasHeight);
+                const yMax = fromCanvasY(0);
+                plotEquation(eq, xMin, xMax, yMin, yMax, canvasWidth, canvasHeight);
+            });
+        }
+
+        function drawGridAndAxes(canvasWidth, canvasHeight) {
+            ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+            ctx.fillStyle = '#555'; ctx.font = '10px Inter';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+            const xMin = fromCanvasX(0); const xMax = fromCanvasX(canvasWidth);
+            const yMin = fromCanvasY(canvasHeight); const yMax = fromCanvasY(0);
+
+            let gridStep = 1; const minPixelsPerGrid = 40;
+            // Adjust grid step based on zoom level (scale)
+            while (scale > 0 && gridStep * scale < minPixelsPerGrid) {
+                gridStep *= 2; if (gridStep * scale < minPixelsPerGrid) gridStep = Math.ceil(gridStep / 2) * 5;
+                if (gridStep * scale < minPixelsPerGrid) gridStep *= 2; if (gridStep === 0 || !isFinite(gridStep)) { gridStep = 1; break; }
+            }
+            while (scale > 0 && gridStep * scale > minPixelsPerGrid * 3) {
+                gridStep /= 2; if (gridStep * scale > minPixelsPerGrid * 3) gridStep = Math.floor(gridStep / 5) * 5;
+                if (gridStep === 0 || !isFinite(gridStep)) { gridStep = 1; break; }
+                if (gridStep * scale > minPixelsPerGrid * 3) gridStep /= 2; if (gridStep === 0 || !isFinite(gridStep)) { gridStep = 1; break; }
+            }
+            gridStep = Math.max(gridStep, 1e-9); // Prevent zero grid step
+
+            ctx.beginPath();
+            // Draw vertical grid lines and X labels
+            const startX = Math.floor(xMin / gridStep) * gridStep; const endX = Math.ceil(xMax / gridStep) * gridStep;
+            for (let x = startX; x <= endX; x += gridStep) {
+                const px = toCanvasX(x); ctx.moveTo(px, 0); ctx.lineTo(px, canvasHeight);
+                const xLabel = formatNumber(x, 2); // Use formatter for labels too potentially
+                if (Math.abs(px - originX) > 15 || Math.abs(originY - (canvasHeight - 10)) > 15) { ctx.fillText(xLabel, px, canvasHeight - 10); }
+                if (Math.abs(px - originX) > 15 || Math.abs(originY - 10) > 15) { ctx.fillText(xLabel, px, 10); }
+            }
+            // Draw horizontal grid lines and Y labels
+            const startY = Math.floor(yMin / gridStep) * gridStep; const endY = Math.ceil(yMax / gridStep) * gridStep;
+            for (let y = startY; y <= endY; y += gridStep) {
+                const py = toCanvasY(y); ctx.moveTo(0, py); ctx.lineTo(canvasWidth, py);
+                const yLabel = formatNumber(y, 2); // Use formatter for labels too potentially
+                if (Math.abs(py - originY) > 15 || Math.abs(originX - 20) > 20) { ctx.textAlign = 'right'; ctx.fillText(yLabel, 20, py); }
+                if (Math.abs(py - originY) > 15 || Math.abs(originX - (canvasWidth - 20)) > 20) { ctx.textAlign = 'left'; ctx.fillText(yLabel, canvasWidth - 20, py); }
+                ctx.textAlign = 'center';
+            }
+            ctx.stroke();
+
+            // Draw main X and Y axes
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.beginPath();
+            if (originY >= 0 && originY <= canvasHeight) { ctx.moveTo(0, originY); ctx.lineTo(canvasWidth, originY); } // X-axis
+            if (originX >= 0 && originX <= canvasWidth) { ctx.moveTo(originX, 0); ctx.lineTo(originX, canvasHeight); } // Y-axis
+            ctx.stroke();
+        }
+
+        function plotEquation(eq, xMin, xMax, yMin, yMax, canvasWidth, canvasHeight) {
+            ctx.strokeStyle = eq.color; ctx.lineWidth = 2; ctx.beginPath();
+            if (eq.type === 'y=f(x)') {
+                let firstPoint = true; const numSteps = Math.max(canvasWidth * 2, 500); const step = (xMax - xMin) / numSteps;
+                for (let i = 0; i <= numSteps; i++) {
+                    const x = xMin + i * step;
+                    try {
+                        const y = eq.func.evaluate({ x: x }); if (typeof y !== 'number' || !isFinite(y)) { if (!firstPoint) ctx.stroke(); firstPoint = true; continue; }
+                        const canvasX = toCanvasX(x); const canvasY = toCanvasY(y);
+                        // Optimization: Don't draw points way off-screen
+                        const verticalBuffer = canvasHeight * 5; if (canvasY < -verticalBuffer || canvasY > canvasHeight + verticalBuffer) { if (!firstPoint) ctx.stroke(); firstPoint = true; continue; }
+                        // Connect points
+                        if (firstPoint) { ctx.moveTo(canvasX, canvasY); firstPoint = false; } else { ctx.lineTo(canvasX, canvasY); }
+                    } catch (e) { if (!firstPoint) ctx.stroke(); firstPoint = true; } // Handle evaluation errors
+                }
+                if (!firstPoint) { ctx.stroke(); } // Stroke remaining path
+            } else if (eq.type === 'x=c') { // Draw vertical line
+                const xConst = eq.func(); const canvasX = toCanvasX(xConst);
+                if (canvasX >= -ctx.lineWidth && canvasX <= canvasWidth + ctx.lineWidth) { ctx.moveTo(canvasX, 0); ctx.lineTo(canvasX, canvasHeight); ctx.stroke(); }
+            }
+            ctx.lineWidth = 1; // Reset line width
+        }
+
+        // --- Equation Management ---
+        function addEquation() {
+            const text = equationInput.value.trim().toLowerCase().replace(/\s+/g, '');
+            equationErrorP.textContent = ''; if (!text) return;
+            try {
+                let type, func, expression;
+                // Basic validation for allowed characters
+                if (/[^a-z0-9\.\+\-\*\/\^\(\)x=]/.test(text)) { throw new Error("Invalid characters in equation."); }
+                // Determine type and parse/compile
+                if (text.startsWith('y=')) { type = 'y=f(x)'; expression = text.substring(2); if (!expression) throw new Error("Missing definition after 'y='."); func = math.parse(expression).compile(); func.evaluate({ x: 1 }); } // Test compile
+                else if (text.startsWith('x=')) { type = 'x=c'; expression = text.substring(2); if (!expression) throw new Error("Missing constant after 'x='."); const value = math.evaluate(expression); if (typeof value !== 'number' || !isFinite(value)) throw new Error("Invalid constant value for x"); func = () => value; }
+                else { type = 'y=f(x)'; expression = text; func = math.parse(expression).compile(); func.evaluate({ x: 1 }); } // Assume y=f(x) if no prefix
+                // Add equation object
+                const color = colors[equations.length % colors.length]; const id = equationCounter++;
+                const newEquation = { id, text: equationInput.value.trim(), func, type, color, expression }; // Store original text
+                equations.push(newEquation); selectedEquationId = id; equationInput.value = '';
+                // Update UI and recalculate
+                updateEquationListUI(); drawGraph(); saveStateToLocalStorage();
+            } catch (error) { console.error("Equation Error:", error); equationErrorP.textContent = `Invalid: ${error.message}. Use 'y=f(x)' or 'x=c'.`; }
+        }
+
+        function removeEquation(idToRemove) {
+            equations = equations.filter(eq => eq.id !== idToRemove);
+            if (selectedEquationId === idToRemove) { selectedEquationId = null; yResultP.textContent = ''; xValueInput.value = ''; }
+            updateEquationListUI(); drawGraph(); saveStateToLocalStorage();
+        }
+
+        function clearAllEquations() {
+            equations = []; equationCounter = 0; selectedEquationId = null;
+            yResultP.textContent = ''; xValueInput.value = '';
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
+            updateEquationListUI(); drawGraph();
+        }
+
+        function selectEquation(idToSelect) {
+            selectedEquationId = idToSelect; updateEquationListUI();
+            yResultP.textContent = ''; xValueInput.value = '';
+        }
+
+        function updateEquationListUI() {
+            equationListDiv.innerHTML = '';
+            if (equations.length === 0) { equationListDiv.innerHTML = '<p class="text-xs text-gray-500">No equations added yet.</p>'; return; }
+            equations.forEach(eq => {
+                const div = document.createElement('div');
+                // Apply selected class and border style
+                div.className = `equation-item flex items-center justify-between text-sm p-1 bg-white rounded border hover:bg-gray-50 ${eq.id === selectedEquationId ? 'selected border-indigo-300' : 'border-transparent'}`;
+                div.innerHTML = `
+                    <span style="color: ${eq.color}; display: flex; align-items: center; overflow: hidden;" title="${eq.text}">
+                       <span class="w-3 h-3 rounded-full mr-2 flex-shrink-0" style="background-color: ${eq.color};"></span>
+                       <span class="truncate">${eq.text}</span>
+                    </span>
+                    <button data-id="${eq.id}" class="remove-btn text-red-500 hover:text-red-700 text-xs font-bold ml-2 px-1 flex-shrink-0">&times;</button>`;
+                // Add event listeners for selection and removal
+                div.addEventListener('click', (e) => { if (!e.target.classList.contains('remove-btn')) selectEquation(eq.id); });
+                div.querySelector('.remove-btn').addEventListener('click', (e) => { e.stopPropagation(); removeEquation(parseInt(e.target.getAttribute('data-id'))); });
+                equationListDiv.appendChild(div);
+            });
+        }
+
+        // --- Calculation ---
+        function calculateY() {
+            const xStr = xValueInput.value; yResultP.textContent = '';
+            if (selectedEquationId === null) { yResultP.textContent = 'Select an equation first.'; return; }
+            if (xStr === '') { yResultP.textContent = 'Enter an X value.'; return; }
+            const selectedEquation = equations.find(eq => eq.id === selectedEquationId);
+            if (!selectedEquation) { yResultP.textContent = 'Error: Eq not found.'; selectedEquationId = null; updateEquationListUI(); return; }
+            try {
+                const x = parseFloat(xStr); if (isNaN(x)) { yResultP.textContent = 'Invalid X value.'; return; }
+                if (selectedEquation.type === 'y=f(x)') {
+                    const y = selectedEquation.func.evaluate({x: x});
+                    if (typeof y === 'number' && isFinite(y)) {
+                        // Use formatNumber for the output
+                        yResultP.textContent = `For ${selectedEquation.text}, y ≈ ${formatNumber(y, 4)}`;
+                    } else { yResultP.textContent = `y undefined for x=${x}`; }
+                } else if (selectedEquation.type === 'x=c') {
+                    const constX = selectedEquation.func();
+                    // Use formatNumber for comparing x values? Maybe not needed here.
+                    if (Math.abs(x - constX) < 1e-9) { yResultP.textContent = `Eq is x=${formatNumber(constX, 4)}, y any value.`; }
+                    else { yResultP.textContent = `Input x=${formatNumber(x, 4)} not on line x=${formatNumber(constX, 4)}.`; }
+                } else { yResultP.textContent = 'Cannot calculate.'; }
+            } catch (error) { console.error("Calculation Error:", error); yResultP.textContent = 'Error calculating y.'; }
+        }
+
+        // --- View Controls (Pan, Zoom, Reset) ---
+        function resetView() { scale = 40; currentOffset = { x: 0, y: 0 }; setTimeout(resizeCanvas, 50); }
+        function startPan(event) { if (event.button !== 0) return; dragStart = { x: event.offsetX - currentOffset.x, y: event.offsetY - currentOffset.y }; canvas.style.cursor = 'grabbing'; canvas.focus(); }
+        function pan(event) { if (!dragStart) return; currentOffset.x = event.offsetX - dragStart.x; currentOffset.y = event.offsetY - dragStart.y; setInitialOrigin(); drawGraph(); }
+        function endPan() { if (!dragStart) return; dragStart = null; canvas.style.cursor = 'grab'; }
+        function handleKeyDown(event) {
+            const panStep = 10; let moved = false, viewChanged = false;
+            switch (event.key) {
+                case 'ArrowLeft': currentOffset.x -= panStep; moved = true; viewChanged = true; break;
+                case 'ArrowRight': currentOffset.x += panStep; moved = true; viewChanged = true; break;
+                case 'ArrowUp': currentOffset.y -= panStep; moved = true; viewChanged = true; break;
+                case 'ArrowDown': currentOffset.y += panStep; moved = true; viewChanged = true; break;
+                case '+': case '=': zoomIn(); moved = true; viewChanged = true; break;
+                case '-': case '_': zoomOut(); moved = true; viewChanged = true; break;
+            } sb
+            if (moved) { event.preventDefault(); setInitialOrigin(); drawGraph(); }
+        }
+        function handleWheelZoom(event) {
+            event.preventDefault(); const zoomFactor = 1.1; const mouseX = event.offsetX; const mouseY = event.offsetY;
+            const graphXBefore = fromCanvasX(mouseX); const graphYBefore = fromCanvasY(mouseY);
+            if (event.deltaY < 0) { scale *= zoomFactor; } else { scale /= zoomFactor; scale = Math.max(5, scale); }
+            const dpr = window.devicePixelRatio || 1; const canvasWidth = canvas.width / dpr; const canvasHeight = canvas.height / dpr;
+            originX = mouseX - graphXBefore * scale; originY = mouseY + graphYBefore * scale;
+            currentOffset.x = originX - canvasWidth / 2; currentOffset.y = originY - canvasHeight / 2;
+            drawGraph();
+        }
+        function zoomIn() { scale *= 1.2; drawGraph(); }
+        function zoomOut() { scale /= 1.2; scale = Math.max(5, scale); drawGraph(); }
+
+        // --- Coordinate Transformations ---
+        function toCanvasX(x) { return originX + x * scale; }
+        function toCanvasY(y) { return originY - y * scale; }
+        function fromCanvasX(px) { return (px - originX) / scale; }
+        function fromCanvasY(py) { return (originY - py) / scale; }
+
+        // --- UI Panel Controls ---
+        function togglePanel() {
+            isPanelCollapsed = !isPanelCollapsed; controlsPanel.classList.toggle('panel-collapsed', isPanelCollapsed);
+            const textExpanded = togglePanelButton.querySelector('.text-expanded'); const textCollapsed = togglePanelButton.querySelector('.text-collapsed');
+            if (isPanelCollapsed) { controlsPanel.style.width = `${collapsedControlsWidth}px`; controlsPanel.style.minWidth = `${collapsedControlsWidth}px`; textExpanded.classList.add('hidden'); textCollapsed.classList.remove('hidden'); resizerHandle.style.display = 'none'; }
+            else { const currentWidth = parseFloat(controlsPanel.style.width) || minControlsWidth; controlsPanel.style.width = `${Math.max(currentWidth, minControlsWidth)}px`; controlsPanel.style.minWidth = `${Math.max(currentWidth, minControlsWidth)}px`; textExpanded.classList.remove('hidden'); textCollapsed.classList.add('hidden'); resizerHandle.style.display = 'flex'; }
+            setTimeout(resizeCanvas, 310);
+        }
+        function startResize(e) { isResizing = true; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; }
+        function handleResize(e) {
+            if (!isResizing || isPanelCollapsed) return; const totalWidth = document.body.clientWidth; const handleWidth = resizerHandle.offsetWidth;
+            let newControlsWidth = e.clientX - handleWidth / 2; newControlsWidth = Math.max(minControlsWidth, newControlsWidth); newControlsWidth = Math.min(totalWidth - handleWidth - 100, newControlsWidth);
+            controlsPanel.style.width = `${newControlsWidth}px`; controlsPanel.style.minWidth = `${newControlsWidth}px`; resizeCanvas();
+        }
+        function stopResize() { if (isResizing) { isResizing = false; document.body.style.cursor = 'default'; document.body.style.userSelect = 'auto'; } }
+
+        // --- Persistence (LocalStorage) ---
+        function saveStateToLocalStorage() {
+            try {
+                const equationsToSave = equations.map(eq => ({ id: eq.id, text: eq.text, type: eq.type, color: eq.color, expression: eq.expression }));
+                const state = { equations: equationsToSave, equationCounter: equationCounter };
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+            } catch (error) { console.error("Error saving state:", error); }
+        }
+        function loadStateFromLocalStorage() {
+            let stateLoaded = false;
+            try {
+                const savedStateJSON = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (savedStateJSON) {
+                    const savedState = JSON.parse(savedStateJSON);
+                    if (savedState.equations && Array.isArray(savedState.equations)) {
+                        equations = savedState.equations.map(eqData => {
+                            try {
+                                let func;
+                                if (eqData.type === 'y=f(x)') { func = math.parse(eqData.expression).compile(); func.evaluate({ x: 1 }); } // Test compilation
+                                else if (eqData.type === 'x=c') { const value = math.evaluate(eqData.expression); if (typeof value !== 'number' || !isFinite(value)) throw new Error("Invalid constant"); func = () => value; }
+                                else { throw new Error(`Unknown type: ${eqData.type}`); }
+                                return { ...eqData, func }; // Return full equation object with recompiled function
+                            } catch (compileError) { console.error(`Error recompiling eq (ID ${eqData.id}):`, compileError); return null; } // Skip equations that fail
+                        }).filter(eq => eq !== null); // Remove nulls from failed recompilations
+                        stateLoaded = true; // Mark state as successfully loaded
+                    } else { equations = []; } // Reset if saved data format is wrong
+                    // Restore counter, ensuring it's greater than any loaded ID
+                    const maxId = equations.reduce((max, eq) => Math.max(max, eq.id), -1);
+                    equationCounter = Math.max(savedState.equationCounter || 0, maxId + 1);
+                } else { equations = []; equationCounter = 0; } // No saved state found
+            } catch (error) { console.error("Error loading state:", error); equations = []; equationCounter = 0; localStorage.removeItem(LOCAL_STORAGE_KEY); } // Clear corrupted data
+            // Calculate intersections after loading state
+            if (stateLoaded || equations.length > 0) {
+            }
+            else { intersectionListDiv.innerHTML = '<p class="text-gray-500">Add equations.</p>'; }
+        }
+
+        // --- Event Listeners ---
+        function addEventListeners() {
+            window.addEventListener('resize', resizeCanvas);
+            addEquationButton.addEventListener('click', addEquation);
+            equationInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addEquation(); equationErrorP.textContent = ''; });
+            zoomInButton.addEventListener('click', zoomIn); zoomOutButton.addEventListener('click', zoomOut);
+            resetViewButton.addEventListener('click', resetView); clearAllButton.addEventListener('click', clearAllEquations);
+            calculateYButton.addEventListener('click', calculateY);
+            // Canvas interaction listeners
+            canvas.addEventListener('mousedown', startPan); canvas.addEventListener('mousemove', pan);
+            canvas.addEventListener('mouseup', endPan); canvas.addEventListener('mouseleave', endPan);
+            canvas.addEventListener('wheel', handleWheelZoom, { passive: false }); // Use wheel for zoom
+            canvas.addEventListener('keydown', handleKeyDown); // Use keyboard for pan/zoom
+            // Panel UI listeners
+            togglePanelButton.addEventListener('click', togglePanel);
+            resizerHandle.addEventListener('mousedown', startResize); document.addEventListener('mousemove', handleResize); document.addEventListener('mouseup', stopResize);
+        }
+
+        // --- Start ---
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+
+</body>
+</html>
